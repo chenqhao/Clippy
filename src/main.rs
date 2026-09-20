@@ -106,19 +106,16 @@ fn main() -> ExitCode {
         Commands::Config { action } => {
             match action {
                 ConfigAction::Path => {
-                    // --> YOUR TURN: Implement `uclip config path` here!
-                    // 1. Fetch Paths::new()
-                    // 2. Get the config_file() path
-                    // 3. Print it using `.display()` (e.g., println!("{}", path.display()))
-                    println!("▸ Showing config path...");
+                    let paths = Paths::new().expect("Could not determine paths");
+                    let config_path = paths.config_file();
+                    println!("▸ Config path: {}", config_path.display());
                 }
                 ConfigAction::Show => {
-                    // --> YOUR TURN: Implement `uclip config show` here!
-                    // 1. Fetch Paths::new()
-                    // 2. Read the config file into a string using `fs::read_to_string(...)`
-                    // 3. Parse it back into Settings using `toml::from_str(...)`
-                    // 4. Print it using `println!("{:#?}", settings)`
-                    println!("▸ Showing config contents...");
+                    let paths = Paths::new().expect("Could not determine paths");
+                    let config_path = paths.config_file();
+                    let config_content = fs::read_to_string(config_path).expect("Could not read config file");
+                    let config: Settings = toml::from_str(&config_content).expect("Could not parse config file");
+                    println!("{:#?}", config);  
                 }
             }
             ExitCode::SUCCESS
