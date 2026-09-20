@@ -22,6 +22,12 @@ impl DeviceId {
     }
 }
 
+impl Default for DeviceId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Display a DeviceId as its underlying UUID string.
 ///
 /// This is Rust's equivalent of Java's `toString()`. Any type that
@@ -53,9 +59,9 @@ impl FromStr for DeviceId {
     }
 }
 
+use directories::ProjectDirs;
 use std::env;
 use std::path::{Path, PathBuf};
-use directories::ProjectDirs;
 
 /// Resolves the directories where uclip stores its config and data.
 #[derive(Debug, Clone)]
@@ -82,7 +88,7 @@ impl Paths {
 
         // Otherwise, ask the OS where things should go.
         let dirs = ProjectDirs::from("com", "uclip", "uclip")?;
-        
+
         Some(Self {
             // .to_path_buf() converts a borrowed &Path into an owned PathBuf.
             config_dir: dirs.config_dir().to_path_buf(),
@@ -111,7 +117,7 @@ impl Paths {
     }
 }
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// User preferences saved in `config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -131,7 +137,7 @@ impl Default for Settings {
     }
 }
 
-/// Information about this specific device. 
+/// Information about this specific device.
 /// Saved in `identity.key` (or similar file in data_dir).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeviceInfo {
@@ -167,34 +173,40 @@ mod tests {
 
     #[test]
     fn paths_respects_uclip_home_override() {
-        // `env::set_var` is unsafe in recent Rust versions because it can cause data races 
+        // `env::set_var` is unsafe in recent Rust versions because it can cause data races
         // in multi-threaded programs (and `cargo test` runs tests in parallel on multiple threads).
-        // Instead, we use the `temp-env` crate to safely set the environment variable 
+        // Instead, we use the `temp-env` crate to safely set the environment variable
         // just for the duration of this closure.
         temp_env::with_var("UCLIP_HOME", Some("/tmp/fake_uclip_home"), || {
             let paths = Paths::new().expect("should create paths");
-            
+
             // Both config and data dirs should point to our override
             assert_eq!(paths.config_dir, Path::new("/tmp/fake_uclip_home"));
             assert_eq!(paths.data_dir, Path::new("/tmp/fake_uclip_home"));
-            
+
             // The files should be inside the override folder
-            assert_eq!(paths.config_file(), Path::new("/tmp/fake_uclip_home/config.toml"));
-            assert_eq!(paths.identity_file(), Path::new("/tmp/fake_uclip_home/identity.key"));
+            assert_eq!(
+                paths.config_file(),
+                Path::new("/tmp/fake_uclip_home/config.toml")
+            );
+            assert_eq!(
+                paths.identity_file(),
+                Path::new("/tmp/fake_uclip_home/identity.key")
+            );
         });
     }
 
     #[test]
     fn settings_serialize_to_toml() {
         let settings = Settings::default();
-        
+
         // toml::to_string takes a reference to our struct and returns a Result<String, Error>
         let toml_str = toml::to_string(&settings).expect("should serialize");
-        
+
         // Let's verify what it looks like!
         assert!(toml_str.contains("port = 8443"));
         assert!(toml_str.contains("sync_enabled = true"));
-        
+
         // Now parse it back
         let parsed: Settings = toml::from_str(&toml_str).expect("should deserialize");
         assert_eq!(settings, parsed);

@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
-use std::process::ExitCode;
 use std::fs;
-use uclip::{Paths, Settings, DeviceInfo, DeviceId};
+use std::process::ExitCode;
+use uclip::{DeviceId, DeviceInfo, Paths, Settings};
 
 /// uclip: A universal clipboard sync tool.
 #[derive(Parser, Debug)]
@@ -18,23 +18,23 @@ enum Commands {
         /// Optional human-readable name for this device.
         #[arg(long)]
         name: Option<String>,
-        
+
         /// Force initialization, regenerating the identity key (unpairs all peers).
         #[arg(long)]
         force: bool,
     },
-    
+
     /// View configuration
-    Config { 
+    Config {
         #[command(subcommand)]
-        action: ConfigAction
+        action: ConfigAction,
     },
 }
 
 #[derive(Subcommand, Debug)]
 enum ConfigAction {
     /// Print the path to the config file.
-    Path, 
+    Path,
     /// Print the configuration contents.
     Show,
 }
@@ -78,19 +78,20 @@ fn main() -> ExitCode {
             let identity_path = paths.identity_file();
             if !identity_path.exists() || force {
                 if force && identity_path.exists() {
-                    println!("⚠ --force was used: regenerating identity. You will need to re-pair with all peers.");
+                    println!(
+                        "⚠ --force was used: regenerating identity. You will need to re-pair with all peers."
+                    );
                 }
 
                 // If they didn't provide a name, ask the OS for the computer's hostname!
-                let device_name = name.unwrap_or_else(|| {
-                    gethostname::gethostname().to_string_lossy().into_owned()
-                });
+                let device_name = name
+                    .unwrap_or_else(|| gethostname::gethostname().to_string_lossy().into_owned());
 
                 let info = DeviceInfo {
                     id: DeviceId::new(),
                     name: device_name,
                 };
-                
+
                 let toml_str = toml::to_string_pretty(&info).unwrap();
                 fs::write(&identity_path, toml_str).unwrap();
                 println!("✓ Generated new device identity: {}", info.id);
@@ -101,26 +102,23 @@ fn main() -> ExitCode {
             println!("✓ Initialization complete.");
             ExitCode::SUCCESS
         }
-        
+
         Commands::Config { action } => {
             match action {
                 ConfigAction::Path => {
-                    let paths = Paths::new().expect("Could not determine paths");
-                    println!("{}", paths.config_file().display());
+                    // --> YOUR TURN: Implement `uclip config path` here!
+                    // 1. Fetch Paths::new()
+                    // 2. Get the config_file() path
+                    // 3. Print it using `.display()` (e.g., println!("{}", path.display()))
+                    println!("▸ Showing config path...");
                 }
                 ConfigAction::Show => {
-                    let paths = Paths::new().expect("Could not determine paths");
-                    let config_path = paths.config_file();
-                    
-                    if !config_path.exists() {
-                        eprintln!("✗ Config file not found. Run `uclip init` first.");
-                        return ExitCode::FAILURE;
-                    }
-                    
-                    let config_str = fs::read_to_string(&config_path).expect("Failed to read config");
-                    let settings: Settings = toml::from_str(&config_str).expect("Failed to parse config");
-                    
-                    println!("{:#?}", settings);
+                    // --> YOUR TURN: Implement `uclip config show` here!
+                    // 1. Fetch Paths::new()
+                    // 2. Read the config file into a string using `fs::read_to_string(...)`
+                    // 3. Parse it back into Settings using `toml::from_str(...)`
+                    // 4. Print it using `println!("{:#?}", settings)`
+                    println!("▸ Showing config contents...");
                 }
             }
             ExitCode::SUCCESS
