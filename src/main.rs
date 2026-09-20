@@ -113,9 +113,11 @@ fn main() -> ExitCode {
                 ConfigAction::Show => {
                     let paths = Paths::new().expect("Could not determine paths");
                     let config_path = paths.config_file();
-                    let config_content = fs::read_to_string(config_path).expect("Could not read config file");
-                    let config: Settings = toml::from_str(&config_content).expect("Could not parse config file");
-                    println!("{:#?}", config);  
+                    let config_content =
+                        fs::read_to_string(config_path).expect("Could not read config file");
+                    let config: Settings =
+                        toml::from_str(&config_content).expect("Could not parse config file");
+                    println!("{:#?}", config);
                 }
             }
             ExitCode::SUCCESS
