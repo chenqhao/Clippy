@@ -1,7 +1,8 @@
 use clap::{Parser, Subcommand};
 use std::fs;
+use std::io;
 use std::process::ExitCode;
-use uclip::{DeviceId, DeviceInfo, Paths, Settings};
+use uclip::{ClipContent, DeviceId, DeviceInfo, Paths, Settings, create_backend};
 
 /// uclip: A universal clipboard sync tool.
 #[derive(Parser, Debug)]
@@ -29,6 +30,12 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
+
+    /// Copy text from stdin to the clipboard.
+    Copy,
+
+    /// Paste clipboard contents to stdout.
+    Paste,
 }
 
 #[derive(Subcommand, Debug)]
@@ -121,6 +128,65 @@ fn main() -> ExitCode {
                 }
             }
             ExitCode::SUCCESS
+        }
+
+        Commands::Copy => {
+            // 1. Read all of stdin into a String.
+            let text = match io::read_to_string(io::stdin()) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("✗ failed to read stdin: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            // 2. Open the clipboard backend.
+            let mut clipboard = match create_backend() {
+                Ok(cb) => cb,
+                Err(e) => {
+                    eprintln!("✗ {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            // 3. Set the clipboard content.
+            let content = ClipContent::Text(text);
+            if let Err(e) = clipboard.set(&content) {
+                eprintln!("✗ {e}");
+                return ExitCode::FAILURE;
+            }
+
+            ExitCode::SUCCESS
+        }
+
+        Commands::Paste => {
+            // 1. Open the clipboard backend.
+            let mut clipboard = match create_backend() {
+                Ok(cb) => cb,
+                Err(e) => {
+                    eprintln!("✗ {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            // 2. Read the clipboard content.
+            match clipboard.get() {
+                Ok(Some(ClipContent::Text(text))) => {
+                    // Print without a trailing newline — this lets
+                    // `uclip paste | wc -c` count the exact bytes.
+                    print!("{text}");
+                    ExitCode::SUCCESS
+                }
+                Ok(None) => {
+                    // Clipboard is empty or has non-text content.
+                    // Exit silently with a non-zero code (convention).
+                    ExitCode::FAILURE
+                }
+                Err(e) => {
+                    eprintln!("✗ {e}");
+                    ExitCode::FAILURE
+                }
+            }
         }
     }
 }

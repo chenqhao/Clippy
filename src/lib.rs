@@ -3,6 +3,18 @@
 //! This crate contains the domain types, sync logic, and platform
 //! abstractions for the uclip daemon and CLI.
 
+// Declare the clipboard module. This tells Rust: "there is a file
+// called clipboard.rs — compile it as part of this crate."
+// In Java, this is like having a package declaration.
+pub mod clipboard;
+
+// Re-export the key types so callers can write `uclip::ClipContent`
+// instead of the longer `uclip::clipboard::ClipContent`.
+pub use clipboard::{
+    ClipContent, ClipboardBackend, ClipboardError, FileClipboard, MemoryClipboard, SystemClipboard,
+    create_backend, create_backend_from_spec,
+};
+
 use std::fmt;
 use std::str::FromStr;
 
