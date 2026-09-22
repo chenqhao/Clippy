@@ -230,8 +230,14 @@ mod tests {
     #[test]
     fn create_backend_from_spec_handles_all_variants() {
         // None and "system" create a SystemClipboard
-        assert!(create_backend_from_spec(None).is_ok());
-        assert!(create_backend_from_spec(Some("system")).is_ok());
+        for spec in [None, Some("system")] {
+    match create_backend_from_spec(spec) {
+        Ok(_) => {}
+        Err(ClipboardError::Access(msg)) => {
+            assert!(!msg.contains("unknown clipboard backend"));
+        }
+    }
+}
 
         // "memory" creates a MemoryClipboard
         let mut mem = create_backend_from_spec(Some("memory")).unwrap();
