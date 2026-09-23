@@ -15,6 +15,19 @@ pub enum ClipContent {
     Text(String),
 }
 
+use sha2::{Digest, Sha256};
+
+impl ClipContent {
+    /// Compute the SHA-256 fingerprint of this clipboard content.
+    ///
+    /// Returns a fixed-size 32-byte array on the stack (no heap allocations).
+    pub fn content_hash(&self) -> [u8; 32] {
+        match self {
+            ClipContent::Text(text) => Sha256::digest(text.as_bytes()).into(),
+        }
+    }
+}
+
 // `#[derive(Error)]` instead of `#[derive(thiserror::Error)]`.
 use thiserror::Error;
 
@@ -255,5 +268,18 @@ mod tests {
             create_backend_from_spec(Some("bogus")),
             Err(ClipboardError::Access(_))
         ));
+    }
+
+    #[test]
+    fn content_hash_is_deterministic() {
+        let clip1 = ClipContent::Text("hello world".to_string());
+        let clip2 = ClipContent::Text("hello world".to_string());
+        let clip3 = ClipContent::Text("different".to_string());
+
+        // Same content -> identical hash
+        assert_eq!(clip1.content_hash(), clip2.content_hash());
+
+        // Different content -> different hash
+        assert_ne!(clip1.content_hash(), clip3.content_hash());
     }
 }

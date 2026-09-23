@@ -66,17 +66,17 @@ impl WatcherHandle {
 /// an event if the content has changed since the last check.
 pub struct PollingWatcher<B: ClipboardBackend> {
     backend: B,
-    last_content: Option<ClipContent>,
+    last_hash: Option<[u8; 32]>,
 }
 
 impl<B: ClipboardBackend> PollingWatcher<B> {
     /// Create a new polling watcher wrapping a clipboard backend.
     ///
-    /// It starts with no previous content recorded.
+    /// It starts with no previous hash recorded.
     pub fn new(backend: B) -> Self {
         Self {
             backend,
-            last_content: None,
+            last_hash: None,
         }
     }
 
@@ -87,9 +87,10 @@ impl<B: ClipboardBackend> PollingWatcher<B> {
     /// - Returns `Err(ClipboardError)` if reading the clipboard failed.
     pub fn poll_once(&mut self) -> Result<Option<ClipEvent>, ClipboardError> {
         let current = self.backend.get()?;
+        let current_hash = current.as_ref().map(|c| c.content_hash());
 
-        if current != self.last_content {
-            self.last_content = current.clone();
+        if current_hash != self.last_hash {
+            self.last_hash = current_hash;
             if let Some(content) = current {
                 return Ok(Some(ClipEvent::Changed(content)));
             }
