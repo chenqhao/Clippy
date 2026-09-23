@@ -19,6 +19,14 @@ struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+enum ConfigAction {
+    /// Print the path to the config file.
+    Path,
+    /// Print the configuration contents.
+    Show,
+}
+
+#[derive(Subcommand, Debug)]
 enum Commands {
     /// Initialize the configuration and identity for this device.
     Init {
@@ -48,14 +56,6 @@ enum Commands {
         #[arg(long)]
         show: bool,
     },
-}
-
-#[derive(Subcommand, Debug)]
-enum ConfigAction {
-    /// Print the path to the config file.
-    Path,
-    /// Print the configuration contents.
-    Show,
 }
 
 fn main() -> ExitCode {
