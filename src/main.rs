@@ -38,7 +38,7 @@ enum Commands {
     },
 
     /// Copy text from stdin to the clipboard.
-    Copy,
+    Copy { text: Option<String> },
 
     /// Paste clipboard contents to stdout.
     Paste,
@@ -142,14 +142,17 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
 
-        Commands::Copy => {
+        Commands::Copy { text } => {
             // 1. Read all of stdin into a String.
-            let text = match io::read_to_string(io::stdin()) {
-                Ok(t) => t,
-                Err(e) => {
-                    eprintln!("✗ failed to read stdin: {e}");
-                    return ExitCode::FAILURE;
-                }
+            let text = match text {
+                Some(t) => t,
+                None => match io::read_to_string(io::stdin()) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("✗ failed to read stdin: {e}");
+                        return ExitCode::FAILURE;
+                    }
+                },
             };
 
             // 2. Open the clipboard backend.
