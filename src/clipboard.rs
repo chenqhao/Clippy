@@ -47,7 +47,7 @@ pub enum ClipboardError {
 ///
 /// In Java, this would be an `interface`. Any type that implements this
 /// trait can be used to get and set clipboard content.
-pub trait ClipboardBackend {
+pub trait ClipboardBackend: Send {
     /// Read the current contents of the clipboard.
     ///
     /// Returns:
@@ -61,6 +61,16 @@ pub trait ClipboardBackend {
     /// We borrow `content` (`&ClipContent`) because the caller still owns
     /// the data and might want to keep using it.
     fn set(&mut self, content: &ClipContent) -> Result<(), ClipboardError>;
+}
+
+impl<T: ?Sized + ClipboardBackend> ClipboardBackend for Box<T> {
+    fn get(&mut self) -> Result<Option<ClipContent>, ClipboardError> {
+        (**self).get()
+    }
+
+    fn set(&mut self, content: &ClipContent) -> Result<(), ClipboardError> {
+        (**self).set(content)
+    }
 }
 
 /// An in-memory fake clipboard for testing.

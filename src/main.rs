@@ -2,7 +2,13 @@ use clap::{Parser, Subcommand};
 use std::fs;
 use std::io;
 use std::process::ExitCode;
-use uclip::{ClipContent, DeviceId, DeviceInfo, Paths, Settings, create_backend};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
+use std::thread;
+use std::time::Duration;
+use uclip::{
+    ClipContent, ClipEvent, DeviceId, DeviceInfo, Paths, PollingWatcher, Settings, create_backend,
+};
 
 /// uclip: A universal clipboard sync tool.
 #[derive(Parser, Debug)]
@@ -36,6 +42,12 @@ enum Commands {
 
     /// Paste clipboard contents to stdout.
     Paste,
+
+    /// Watches for change in clipboard
+    Watch {
+        #[arg(long)]
+        show: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -187,6 +199,94 @@ fn main() -> ExitCode {
                     ExitCode::FAILURE
                 }
             }
+        }
+
+        Commands::Watch { show } => {
+            // 1. Open the clipboard backend.
+            let clipboard = match create_backend() {
+                Ok(cb) => cb,
+                Err(e) => {
+                    eprintln!("✗ {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            // 2. Wrap it in our polling watcher.
+            let mut watcher = PollingWatcher::new(clipboard);
+
+            // 3. Create a channel to send events from worker thread to main thread.
+            let (tx, rx) = mpsc::channel();
+
+            // 4. Create an atomic stop flag shared across threads.
+            let running = Arc::new(AtomicBool::new(true));
+
+            // 5. Register Ctrl-C handler to trigger clean shutdown.
+            let r = Arc::clone(&running);
+            if let Err(e) = ctrlc::set_handler(move || {
+                r.store(false, Ordering::SeqCst);
+            }) {
+                eprintln!("✗ failed to set Ctrl-C handler: {e}");
+                return ExitCode::FAILURE;
+            }
+
+            // 6. Spawn the background worker thread.
+            let stop = Arc::clone(&running);
+            let handle = thread::spawn(move || {
+                while stop.load(Ordering::Relaxed) {
+                    match watcher.poll_once() {
+                        Ok(Some(event)) => {
+                            if tx.send(event).is_err() {
+                                break;
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) => eprintln!("✗ {e}"),
+                    }
+                    thread::sleep(Duration::from_millis(500));
+                }
+            });
+
+            // 7. Consume events with a timeout so we regularly check the `running` flag.
+            while running.load(Ordering::Relaxed) {
+                match rx.recv_timeout(Duration::from_millis(200)) {
+                    Ok(event) => match event {
+                        ClipEvent::Changed(content) => {
+                            let hash = content.content_hash();
+                            let short_hash = format!(
+                                "{:02x}{:02x}{:02x}{:02x}",
+                                hash[0], hash[1], hash[2], hash[3]
+                            );
+
+                            match content {
+                                ClipContent::Text(text) => {
+                                    let len = text.len();
+                                    let unit = if len == 1 { "byte" } else { "bytes" };
+                                    println!("▸ clip changed: {short_hash} (text, {len} {unit})");
+
+                                    if show {
+                                        for line in text.lines() {
+                                            println!("  {line}");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        // Timeout: loop back and check `running`
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        break;
+                    }
+                }
+            }
+
+            // 8. Clean shutdown: wait for the worker thread to exit.
+            eprintln!("\n▸ Stopping clipboard watcher...");
+            if let Err(e) = handle.join() {
+                eprintln!("✗ failed to join watcher thread: {e:?}");
+            }
+            ExitCode::SUCCESS
         }
     }
 }

@@ -15,7 +15,7 @@ pub use clipboard::{
     ClipContent, ClipboardBackend, ClipboardError, FileClipboard, MemoryClipboard, SystemClipboard,
     create_backend, create_backend_from_spec,
 };
-pub use watcher::{ClipEvent, WatcherHandle};
+pub use watcher::{ClipEvent, PollingWatcher, WatcherHandle};
 
 use std::fmt;
 use std::str::FromStr;
