@@ -297,8 +297,10 @@ fn main() -> ExitCode {
 
             // 8. Clean shutdown: wait for the worker thread to exit.
             eprintln!("\n▸ Stopping clipboard watcher...");
-            if let Err(e) = handle.join() {
-                eprintln!("✗ failed to join watcher thread: {e:?}");
+
+            match handle.join() {
+                Ok(_) => eprintln!("✔ Watcher stopped."),
+                Err(e) => eprintln!("✗ failed to join watcher thread: {e:?}"),
             }
             ExitCode::SUCCESS
         }
