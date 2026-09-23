@@ -145,14 +145,25 @@ fn main() -> ExitCode {
         Commands::Copy { text } => {
             // 1. Read all of stdin into a String.
             let text = match text {
-                Some(t) => t,
-                None => match io::read_to_string(io::stdin()) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        eprintln!("✗ failed to read stdin: {e}");
-                        return ExitCode::FAILURE;
+                Some(t) => {
+                    eprintln!("Copied to clipboard: {t}");
+                    t
+                }
+                None => {
+                    eprintln!(
+                        "Type your text, hit enter and then hit Ctrl + D to copy to clipboard"
+                    );
+                    match io::read_to_string(io::stdin()) {
+                        Ok(t) => {
+                            eprintln!("Copied to clipboard: {t}");
+                            t
+                        }
+                        Err(e) => {
+                            eprintln!("✗ failed to read stdin: {e}");
+                            return ExitCode::FAILURE;
+                        }
                     }
-                },
+                }
             };
 
             // 2. Open the clipboard backend.
