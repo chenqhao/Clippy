@@ -7,6 +7,7 @@
 // called clipboard.rs — compile it as part of this crate."
 // In Java, this is like having a package declaration.
 pub mod clipboard;
+pub mod proto;
 pub mod watcher;
 
 // Re-export the key types so callers can write `uclip::ClipContent`
@@ -15,6 +16,7 @@ pub use clipboard::{
     ClipContent, ClipboardBackend, ClipboardError, FileClipboard, MemoryClipboard, SystemClipboard,
     create_backend, create_backend_from_spec,
 };
+pub use proto::{Capability, GoodbyeReason, Message, PROTOCOL_VERSION};
 pub use watcher::{ClipEvent, PollingWatcher, WatcherHandle};
 
 use std::fmt;

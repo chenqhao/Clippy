@@ -176,7 +176,7 @@ fn main() -> ExitCode {
             };
 
             // 3. Set the clipboard content.
-            let content = ClipContent::Text(text);
+            let content = ClipContent::Text { text };
             if let Err(e) = clipboard.set(&content) {
                 eprintln!("✗ {e}");
                 return ExitCode::FAILURE;
@@ -197,11 +197,16 @@ fn main() -> ExitCode {
 
             // 2. Read the clipboard content.
             match clipboard.get() {
-                Ok(Some(ClipContent::Text(text))) => {
+                Ok(Some(ClipContent::Text { text })) => {
                     // Print without a trailing newline — this lets
                     // `uclip paste | wc -c` count the exact bytes.
                     print!("{text}");
                     ExitCode::SUCCESS
+                }
+                Ok(Some(_)) => {
+                    // Non-text content (e.g. image in Phase 10)
+                    eprintln!("✗ clipboard contains non-text content");
+                    ExitCode::FAILURE
                 }
                 Ok(None) => {
                     // Clipboard is empty or has non-text content.
@@ -271,16 +276,14 @@ fn main() -> ExitCode {
                                 hash[0], hash[1], hash[2], hash[3]
                             );
 
-                            match content {
-                                ClipContent::Text(text) => {
-                                    let len = text.len();
-                                    let unit = if len == 1 { "byte" } else { "bytes" };
-                                    println!("▸ clip changed: {short_hash} (text, {len} {unit})");
+                            if let ClipContent::Text { text } = content {
+                                let len = text.len();
+                                let unit = if len == 1 { "byte" } else { "bytes" };
+                                println!("▸ clip changed: {short_hash} (text, {len} {unit})");
 
-                                    if show {
-                                        for line in text.lines() {
-                                            println!("  {line}");
-                                        }
+                                if show {
+                                    for line in text.lines() {
+                                        println!("  {line}");
                                     }
                                 }
                             }

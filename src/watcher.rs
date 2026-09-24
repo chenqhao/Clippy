@@ -114,7 +114,9 @@ mod tests {
         assert_eq!(watcher.poll_once().unwrap(), None);
 
         // 2. Add content — detects change
-        let clip1 = ClipContent::Text("hello".to_string());
+        let clip1 = ClipContent::Text {
+            text: "hello".to_string(),
+        };
         watcher.backend.set(&clip1).unwrap();
         assert_eq!(
             watcher.poll_once().unwrap(),
@@ -125,7 +127,9 @@ mod tests {
         assert_eq!(watcher.poll_once().unwrap(), None);
 
         // 4. Change content — detects new change
-        let clip2 = ClipContent::Text("world".to_string());
+        let clip2 = ClipContent::Text {
+            text: "world".to_string(),
+        };
         watcher.backend.set(&clip2).unwrap();
         assert_eq!(
             watcher.poll_once().unwrap(),

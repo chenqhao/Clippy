@@ -7,12 +7,18 @@
 ///
 /// We use an enum (not just a plain `String`) because in the future
 /// we will add variants like `Png(Vec<u8>)` for image data.
-/// Starting with an enum now means we won't have to rewrite
-/// everything when we add images later.
-#[derive(Debug, Clone, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+/// The content stored on a clipboard or transferred over the wire.
+///
+/// Marked `#[non_exhaustive]` so adding new variants (e.g. `Html` or `Png`)
+/// in future phases will not be a breaking change for callers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ClipContent {
     /// UTF-8 text content.
-    Text(String),
+    Text { text: String },
 }
 
 use sha2::{Digest, Sha256};
@@ -23,7 +29,7 @@ impl ClipContent {
     /// Returns a fixed-size 32-byte array on the stack (no heap allocations).
     pub fn content_hash(&self) -> [u8; 32] {
         match self {
-            ClipContent::Text(text) => Sha256::digest(text.as_bytes()).into(),
+            ClipContent::Text { text } => Sha256::digest(text.as_bytes()).into(),
         }
     }
 }
@@ -130,7 +136,7 @@ impl ClipboardBackend for SystemClipboard {
     fn get(&mut self) -> Result<Option<ClipContent>, ClipboardError> {
         match self.inner.get_text() {
             // The OS returned text — wrap it in our ClipContent enum.
-            Ok(text) => Ok(Some(ClipContent::Text(text))),
+            Ok(text) => Ok(Some(ClipContent::Text { text })),
 
             // The clipboard is empty, or contains non-text data (e.g., an image).
             // This is NOT an error — it just means "nothing to paste".
@@ -146,9 +152,9 @@ impl ClipboardBackend for SystemClipboard {
     fn set(&mut self, content: &ClipContent) -> Result<(), ClipboardError> {
         // Destructure the enum to extract the inner string.
         // `match` forces us to handle every variant — if we add
-        // `Png(Vec<u8>)` later, the compiler will remind us here.
+        // `Png { bytes }` later, the compiler will remind us here.
         match content {
-            ClipContent::Text(text) => self
+            ClipContent::Text { text } => self
                 .inner
                 .set_text(text)
                 .map_err(|e| ClipboardError::Access(e.to_string())),
@@ -173,7 +179,7 @@ impl FileClipboard {
 impl ClipboardBackend for FileClipboard {
     fn get(&mut self) -> Result<Option<ClipContent>, ClipboardError> {
         match fs::read_to_string(&self.path) {
-            Ok(text) => Ok(Some(ClipContent::Text(text))),
+            Ok(text) => Ok(Some(ClipContent::Text { text })),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(other) => Err(ClipboardError::Access(other.to_string())),
         }
@@ -181,7 +187,7 @@ impl ClipboardBackend for FileClipboard {
 
     fn set(&mut self, content: &ClipContent) -> Result<(), ClipboardError> {
         match content {
-            ClipContent::Text(text) => {
+            ClipContent::Text { text } => {
                 fs::write(&self.path, text).map_err(|e| ClipboardError::Access(e.to_string()))
             }
         }
@@ -229,10 +235,12 @@ mod tests {
         assert_eq!(clipboard.get().unwrap(), None);
 
         // 2. Set some text
-        let clip = ClipContent::Text("hello world".to_string());
+        let clip = ClipContent::Text {
+            text: "hello world".to_string(),
+        };
         clipboard.set(&clip).unwrap();
 
-        // 3. Read it back (Ok(Some(ClipContent::Text("hello world"))))
+        // 3. Read it back
         assert_eq!(clipboard.get().unwrap(), Some(clip));
     }
 
@@ -244,7 +252,9 @@ mod tests {
 
         assert_eq!(clipboard.get().unwrap(), None);
 
-        let clip = ClipContent::Text("hello world".to_string());
+        let clip = ClipContent::Text {
+            text: "hello world".to_string(),
+        };
         clipboard.set(&clip).unwrap();
 
         assert_eq!(clipboard.get().unwrap(), Some(clip));
@@ -282,14 +292,32 @@ mod tests {
 
     #[test]
     fn content_hash_is_deterministic() {
-        let clip1 = ClipContent::Text("hello world".to_string());
-        let clip2 = ClipContent::Text("hello world".to_string());
-        let clip3 = ClipContent::Text("different".to_string());
+        let clip1 = ClipContent::Text {
+            text: "hello world".to_string(),
+        };
+        let clip2 = ClipContent::Text {
+            text: "hello world".to_string(),
+        };
+        let clip3 = ClipContent::Text {
+            text: "different".to_string(),
+        };
 
         // Same content -> identical hash
         assert_eq!(clip1.content_hash(), clip2.content_hash());
 
         // Different content -> different hash
         assert_ne!(clip1.content_hash(), clip3.content_hash());
+    }
+
+    #[test]
+    fn clip_content_serializes_with_type_tag() {
+        let clip = ClipContent::Text {
+            text: "hello world".to_string(),
+        };
+        let json = serde_json::to_string(&clip).expect("failed to serialize");
+        assert_eq!(json, r#"{"type":"text","text":"hello world"}"#);
+
+        let parsed: ClipContent = serde_json::from_str(&json).expect("failed to deserialize");
+        assert_eq!(clip, parsed);
     }
 }
