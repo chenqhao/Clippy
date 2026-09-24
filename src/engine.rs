@@ -323,4 +323,29 @@ mod tests {
         let actions_on_b = engine_b.on_remote_update(dev_a, msg_a, 1050);
         assert!(actions_on_b.is_empty());
     }
+
+    #[test]
+    fn remote_update_sets_echo_suppression() {
+        let dev_a: DeviceId = "11111111-1111-1111-1111-111111111111".parse().unwrap();
+        let dev_b: DeviceId = "22222222-2222-2222-2222-222222222222".parse().unwrap();
+        let mut engine_a = Engine::new(dev_a);
+        let mut engine_b = Engine::new(dev_b);
+
+        let content_b = ClipContent::Text {
+            text: "from B".to_string(),
+        };
+
+        let actions_b = engine_b.on_local_change(content_b.clone(), 1000);
+
+        let msg_b = match actions_b.into_iter().next().unwrap() {
+            Action::Broadcast(msg) => msg,
+            _ => unreachable!(),
+        };
+
+        let actions = engine_a.on_remote_update(dev_b, msg_b, 1000);
+        assert_eq!(actions, vec![Action::ApplyToClipboard(content_b.clone())]);
+
+        let echo_actions = engine_a.on_local_change(content_b, 1500);
+        assert!(echo_actions.is_empty());
+    }
 }
