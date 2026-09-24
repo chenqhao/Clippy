@@ -7,6 +7,7 @@
 // called clipboard.rs — compile it as part of this crate."
 // In Java, this is like having a package declaration.
 pub mod clipboard;
+pub mod engine;
 pub mod proto;
 pub mod watcher;
 
@@ -16,6 +17,7 @@ pub use clipboard::{
     ClipContent, ClipboardBackend, ClipboardError, FileClipboard, MemoryClipboard, SystemClipboard,
     create_backend, create_backend_from_spec,
 };
+pub use engine::{Action, Engine, LamportClock, UpdateId};
 pub use proto::{Capability, GoodbyeReason, Message, PROTOCOL_VERSION};
 pub use watcher::{ClipEvent, PollingWatcher, WatcherHandle};
 
@@ -28,7 +30,7 @@ use uuid::Uuid;
 ///
 /// This is a newtype wrapper around [`Uuid`] — it prevents accidentally
 /// mixing up device IDs with other UUIDs in the program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct DeviceId(Uuid);
 
 impl DeviceId {
