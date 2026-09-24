@@ -5,6 +5,7 @@
 
 use crate::DeviceId;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Identifies an update in distributed logical time.
 ///
@@ -71,6 +72,8 @@ pub struct Engine {
     device_id: DeviceId,
     clock: LamportClock,
     current_hash: Option<[u8; 32]>,
+    current_update: Option<UpdateId>,
+    suppression: HashMap<[u8; 32], u64>,
 }
 
 impl Engine {
@@ -80,6 +83,8 @@ impl Engine {
             device_id,
             clock: LamportClock::new(),
             current_hash: None,
+            current_update: None,
+            suppression: HashMap::new(),
         }
     }
 
@@ -92,23 +97,36 @@ impl Engine {
     ///
     /// If the content is new:
     /// - Advances the Lamport clock.
-    /// - Records the new hash.
+    /// - Records the new hash and update ID.
     /// - Emits [`Action::Broadcast`] containing a `Message::ClipUpdate`.
     ///
-    /// If the content matches the currently stored hash, it is ignored (deduplicated).
+    /// If the content matches an unexpired echo or current hash, it is ignored.
     pub fn on_local_change(&mut self, content: ClipContent, now_ms: u64) -> Vec<Action> {
         let hash = content.content_hash();
 
-        // 1. Deduplication: if identical to current content, ignore.
+        // 1. Echo suppression: if we recently wrote this from a remote peer, ignore it.
+        if self
+            .suppression
+            .get(&hash)
+            .is_some_and(|&expires_at| now_ms < expires_at)
+        {
+            return Vec::new();
+        }
+
+        // 2. Deduplication: if identical to current content, ignore.
         if Some(hash) == self.current_hash {
             return Vec::new();
         }
 
-        // 2. Advance logical clock and record new state.
+        // 3. Advance logical clock and record new state.
         let lamport = self.clock.tick();
         self.current_hash = Some(hash);
+        self.current_update = Some(UpdateId {
+            lamport,
+            origin: self.device_id,
+        });
 
-        // 3. Emit Broadcast action.
+        // 4. Emit Broadcast action.
         let update_msg = Message::ClipUpdate {
             update_id: Uuid::new_v4(),
             origin: self.device_id,
@@ -119,7 +137,58 @@ impl Engine {
 
         vec![Action::Broadcast(update_msg)]
     }
+
+    /// Handle an update message received from a remote peer.
+    ///
+    /// Resolves conflicts using Last-Writer-Wins (Lamport clock, tie-broken by [`DeviceId`]).
+    /// If the update is newer than the current state:
+    /// - Advances the local Lamport clock.
+    /// - Records the content hash in the echo suppression map (2 s TTL).
+    /// - Emits [`Action::ApplyToClipboard`].
+    ///
+    /// Older or duplicate updates, or messages from spoofed origins, are ignored.
+    pub fn on_remote_update(
+        &mut self,
+        from: DeviceId,
+        message: Message,
+        now_ms: u64,
+    ) -> Vec<Action> {
+        let Message::ClipUpdate {
+            origin,
+            lamport,
+            content,
+            ..
+        } = message
+        else {
+            return Vec::new();
+        };
+
+        // 1. Fail closed: ensure sender is not spoofing another device's origin.
+        if origin != from {
+            return Vec::new();
+        }
+
+        // 2. Advance logical clock (Lamport witness rule).
+        self.clock.witness(lamport);
+
+        // 3. Last-Writer-Wins conflict resolution.
+        let remote_id = UpdateId { lamport, origin };
+        if self.current_update.is_some_and(|curr| remote_id <= curr) {
+            return Vec::new();
+        }
+
+        // 4. Remote update wins! Update state & suppress local echo.
+        let hash = content.content_hash();
+        self.current_hash = Some(hash);
+        self.current_update = Some(remote_id);
+        self.suppression.insert(hash, now_ms + SUPPRESSION_TTL_MS);
+
+        vec![Action::ApplyToClipboard(content)]
+    }
 }
+
+/// Duration in milliseconds to suppress local echo after applying a remote clip (2 seconds).
+pub const SUPPRESSION_TTL_MS: u64 = 2000;
 
 #[cfg(test)]
 mod tests {
@@ -217,5 +286,41 @@ mod tests {
         assert_eq!(actions1.len(), 1);
         assert!(actions2.is_empty());
         assert_eq!(engine.clock(), 1);
+    }
+
+    #[test]
+    fn remote_update_resolves_tie_using_higher_device_id() {
+        let dev_a: DeviceId = "11111111-1111-1111-1111-111111111111".parse().unwrap();
+        let dev_b: DeviceId = "22222222-2222-2222-2222-222222222222".parse().unwrap();
+        let mut engine_a = Engine::new(dev_a);
+        let mut engine_b = Engine::new(dev_b);
+
+        let content_a = ClipContent::Text {
+            text: "from A".to_string(),
+        };
+        let content_b = ClipContent::Text {
+            text: "from B".to_string(),
+        };
+
+        // Both devices copy locally, each advancing to clock = 1
+        let actions_a = engine_a.on_local_change(content_a, 1000);
+        let actions_b = engine_b.on_local_change(content_b.clone(), 1000);
+
+        let msg_b = match actions_b.into_iter().next().unwrap() {
+            Action::Broadcast(msg) => msg,
+            _ => unreachable!(),
+        };
+        let msg_a = match actions_a.into_iter().next().unwrap() {
+            Action::Broadcast(msg) => msg,
+            _ => unreachable!(),
+        };
+
+        // Device A receives B's update. Both are at lamport: 1, but dev_b > dev_a, so B wins!
+        let actions_on_a = engine_a.on_remote_update(dev_b, msg_b, 1050);
+        assert_eq!(actions_on_a, vec![Action::ApplyToClipboard(content_b)]);
+
+        // Device B receives A's update. Both are at lamport: 1, but dev_a < dev_b, so A loses!
+        let actions_on_b = engine_b.on_remote_update(dev_a, msg_a, 1050);
+        assert!(actions_on_b.is_empty());
     }
 }
