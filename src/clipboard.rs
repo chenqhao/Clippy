@@ -32,6 +32,12 @@ impl ClipContent {
             ClipContent::Text { text } => Sha256::digest(text.as_bytes()).into(),
         }
     }
+
+    pub fn byte_size(&self) -> usize {
+        match self {
+            ClipContent::Text { text } => text.len(),
+        }
+    }
 }
 
 // `#[derive(Error)]` instead of `#[derive(thiserror::Error)]`.

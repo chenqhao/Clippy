@@ -74,6 +74,7 @@ pub struct Engine {
     current_hash: Option<[u8; 32]>,
     current_update: Option<UpdateId>,
     suppression: HashMap<[u8; 32], u64>,
+    max_item_bytes: usize,
 }
 
 impl Engine {
@@ -85,7 +86,14 @@ impl Engine {
             current_hash: None,
             current_update: None,
             suppression: HashMap::new(),
+            max_item_bytes: DEFAULT_MAX_ITEM_BYTES,
         }
+    }
+
+    /// Configure a custom maximum clip size limit in bytes (builder pattern).
+    pub fn with_max_item_bytes(mut self, max: usize) -> Self {
+        self.max_item_bytes = max;
+        self
     }
 
     /// Current logical clock counter.
@@ -102,6 +110,11 @@ impl Engine {
     ///
     /// If the content matches an unexpired echo or current hash, it is ignored.
     pub fn on_local_change(&mut self, content: ClipContent, now_ms: u64) -> Vec<Action> {
+        // 0. Size check: ignore clips exceeding maximum item limit.
+        if content.byte_size() > self.max_item_bytes {
+            return Vec::new();
+        }
+
         let hash = content.content_hash();
 
         // 1. Echo suppression: if we recently wrote this from a remote peer, ignore it.
@@ -168,10 +181,15 @@ impl Engine {
             return Vec::new();
         }
 
-        // 2. Advance logical clock (Lamport witness rule).
+        // 2. Size check: ignore remote updates exceeding maximum item limit.
+        if content.byte_size() > self.max_item_bytes {
+            return Vec::new();
+        }
+
+        // 3. Advance logical clock (Lamport witness rule).
         self.clock.witness(lamport);
 
-        // 3. Last-Writer-Wins conflict resolution.
+        // 4. Last-Writer-Wins conflict resolution.
         let remote_id = UpdateId { lamport, origin };
         if self.current_update.is_some_and(|curr| remote_id <= curr) {
             return Vec::new();
@@ -203,6 +221,9 @@ impl Engine {
 
 /// Duration in milliseconds to suppress local echo after applying a remote clip (2 seconds).
 pub const SUPPRESSION_TTL_MS: u64 = 2000;
+
+/// Default maximum allowed clip size in bytes (10 MiB).
+pub const DEFAULT_MAX_ITEM_BYTES: usize = 10_485_760;
 
 #[cfg(test)]
 mod tests {
@@ -400,5 +421,20 @@ mod tests {
         let local_actions = engine_a.on_local_change(content_b, 3600);
 
         assert_eq!(local_actions.len(), 1);
+    }
+
+    #[test]
+    fn local_change_ignores_clips_exceeding_max_bytes() {
+        let dev_a: DeviceId = "11111111-1111-1111-1111-111111111111".parse().unwrap();
+        let mut engine = Engine::new(dev_a).with_max_item_bytes(5);
+
+        let content = ClipContent::Text {
+            text: "hello world".to_string(),
+        };
+
+        let actions = engine.on_local_change(content, 1000);
+
+        assert!(actions.is_empty());
+        assert_eq!(engine.clock(), 0);
     }
 }
