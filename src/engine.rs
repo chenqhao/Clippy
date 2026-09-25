@@ -437,4 +437,51 @@ mod tests {
         assert!(actions.is_empty());
         assert_eq!(engine.clock(), 0);
     }
+
+    #[test]
+    fn remote_update_rejects_spoofed_origin() {
+        let dev_a: DeviceId = "11111111-1111-1111-1111-111111111111".parse().unwrap();
+        let dev_b: DeviceId = "22222222-2222-2222-2222-222222222222".parse().unwrap();
+        let dev_rouge: DeviceId = "33333333-3333-3333-3333-333333333333".parse().unwrap();
+
+        let mut engine_a = Engine::new(dev_a);
+
+        let spoofed_msg = Message::ClipUpdate {
+            update_id: uuid::Uuid::new_v4(),
+            origin: dev_rouge,
+            lamport: 1,
+            created_at_ms: 1000,
+            content: ClipContent::Text {
+                text: "imposter".to_string(),
+            },
+        };
+
+        let actions = engine_a.on_remote_update(dev_b, spoofed_msg, 1000);
+
+        assert!(actions.is_empty());
+        assert_eq!(engine_a.clock(), 0);
+    }
+
+    #[test]
+    fn remote_update_ignores_clips_exceeding_max_bytes() {
+        let dev_a: DeviceId = "11111111-1111-1111-1111-111111111111".parse().unwrap();
+        let dev_b: DeviceId = "22222222-2222-2222-2222-222222222222".parse().unwrap();
+
+        let mut engine_a = Engine::new(dev_a).with_max_item_bytes(5);
+
+        let msg = Message::ClipUpdate {
+            update_id: uuid::Uuid::new_v4(),
+            origin: dev_b,
+            lamport: 1,
+            created_at_ms: 1000,
+            content: ClipContent::Text {
+                text: "oversized clip".to_string(),
+            },
+        };
+
+        let actions = engine_a.on_remote_update(dev_b, msg, 1000);
+
+        assert!(actions.is_empty());
+        assert_eq!(engine_a.clock(), 0);
+    }
 }
