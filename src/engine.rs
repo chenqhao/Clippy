@@ -185,6 +185,20 @@ impl Engine {
 
         vec![Action::ApplyToClipboard(content)]
     }
+
+    /// Periodic heartbeat event.
+    ///
+    /// Prunes expired entries from the echo suppression map so memory is bounded.
+    pub fn tick(&mut self, now_ms: u64) -> Vec<Action> {
+        self.suppression
+            .retain(|_, &mut expires_at| now_ms < expires_at);
+        Vec::new()
+    }
+
+    /// Number of entries currently in the echo suppression map.
+    pub fn suppression_count(&self) -> usize {
+        self.suppression.len()
+    }
 }
 
 /// Duration in milliseconds to suppress local echo after applying a remote clip (2 seconds).
@@ -347,5 +361,44 @@ mod tests {
 
         let echo_actions = engine_a.on_local_change(content_b, 1500);
         assert!(echo_actions.is_empty());
+    }
+
+    #[test]
+    fn tick_prunes_expired_suppression_entries() {
+        let dev_a: DeviceId = "11111111-1111-1111-1111-111111111111".parse().unwrap();
+        let dev_b: DeviceId = "22222222-2222-2222-2222-222222222222".parse().unwrap();
+        let mut engine_a = Engine::new(dev_a);
+        let mut engine_b = Engine::new(dev_b);
+
+        let content_b = ClipContent::Text {
+            text: "from B".to_string(),
+        };
+
+        let actions_b = engine_b.on_local_change(content_b.clone(), 1000);
+
+        let msg_b = match actions_b.into_iter().next().unwrap() {
+            Action::Broadcast(msg) => msg,
+            _ => unreachable!(),
+        };
+
+        let actions = engine_a.on_remote_update(dev_b, msg_b, 1000);
+        assert_eq!(actions, vec![Action::ApplyToClipboard(content_b.clone())]);
+        assert_eq!(engine_a.suppression_count(), 1);
+
+        engine_a.tick(2500);
+        assert_eq!(engine_a.suppression_count(), 1);
+
+        let intermediate = ClipContent::Text {
+            text: "intermediate".to_string(),
+        };
+
+        engine_a.on_local_change(intermediate, 2600);
+
+        engine_a.tick(3500);
+        assert_eq!(engine_a.suppression_count(), 0);
+
+        let local_actions = engine_a.on_local_change(content_b, 3600);
+
+        assert_eq!(local_actions.len(), 1);
     }
 }
